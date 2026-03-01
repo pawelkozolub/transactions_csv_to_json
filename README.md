@@ -9,7 +9,7 @@ A minimal Python CLI that converts transactions CSV to JSON as a list of diction
 - **CSV parsing**: Uses `csv.DictReader` with semicolon (`;`) delimiter and UTF-8 encoding
 - **Leading blank lines**: Automatically skips empty lines at the start of the file
 - **Output format**: JSON array of objects; each row becomes a dict with headers as keys and cell values as values
-- **Ticker field**: Each record gets a `Ticker` key with the official 3-letter ticker prescribed by the stock exchange (`Gielda`). Tickers are loaded from external `stock_tickers.json`. Raises an error if a stock (Papier) is not in the mapping.
+- **Ticker field**: Each record gets a `Ticker` key with the official 3-letter ticker prescribed by the stock exchange. Tickers are loaded from external `stock_tickers.json`. Raises an error if a stock is not in the mapping.
 - **CLI arguments**:
   - `input` (optional): Input CSV path (default: `transactions.csv`)
   - `-o`, `--output`: Output JSON path (default: derived from input, e.g. `transactions.json`)
@@ -18,7 +18,16 @@ A minimal Python CLI that converts transactions CSV to JSON as a list of diction
 
 ### Files
 
-- `stock_tickers.json` — exchange (Gielda) → Papier → 3-letter ticker mapping. Edit to add new stocks.
+- `stock_tickers.json` — stock exchange → stock asset name → 3-letter ticker mapping. Edit to add new stocks. Exemplary file content:
+```json
+{
+  "WWA-GPW": {
+    "BUDIMEX": "BDX",
+    "DIGITANET": "DIG",
+    "XTB": "XTB"
+  }
+}
+```
 
 ### Dependencies
 

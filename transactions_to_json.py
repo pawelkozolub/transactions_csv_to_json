@@ -6,39 +6,69 @@ import csv
 import io
 import json
 import sys
+from pathlib import Path
 
-# Official GPW (Warsaw Stock Exchange) 3-letter ticker codes, prescribed by the exchange.
-# (Gielda, Papier) -> Code. Sources: GPW, TradingView, financial data providers.
-STOCK_CODE_MAP: dict[tuple[str, str], str] = {
-    ("WWA-GPW", "ASBIS"): "ASB",
-    ("WWA-GPW", "ASSECOPOL"): "ACP",
-    ("WWA-GPW", "ASSECOSEE"): "ASE",
-    ("WWA-GPW", "BUDIMEX"): "BDX",
-    ("WWA-GPW", "CYBERFLKS"): "CBF",
-    ("WWA-GPW", "DEVELIA"): "DVL",
-    ("WWA-GPW", "DIGITANET"): "DIG",
-    ("WWA-GPW", "EDINVEST"): "EDI",
-    ("WWA-GPW", "FERRO"): "FRO",
-    ("WWA-GPW", "GPW"): "GPW",
-    ("WWA-GPW", "IFIRMA"): "IFI",
-    ("WWA-GPW", "KETY"): "KET",
-    ("WWA-GPW", "KRKA"): "KRK",
-    ("WWA-GPW", "KRUK"): "KRK",
-    ("WWA-GPW", "MOBRUK"): "MBR",
-    ("WWA-GPW", "PCCROKITA"): "PCR",
-    ("WWA-GPW", "PZU"): "PZU",
-    ("WWA-GPW", "SEKO"): "SEK",
-    ("WWA-GPW", "SOPHARMA"): "SPH",
-    ("WWA-GPW", "SYNEKTIK"): "SNT",
-    ("WWA-GPW", "TEXT"): "TXT",
-    ("WWA-GPW", "TSGAMES"): "TSG",
-    ("WWA-GPW", "XTB"): "XTB",
-}
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_STOCK_TICKERS_PATH = SCRIPT_DIR / "stock_tickers.json"
+MIN_COMMISSION = 5.0
 
 
-def get_stock_code(papier: str, gielda: str) -> str:
-    """Return 3-letter stock code for the given Papier on the given Gielda (exchange)."""
-    return STOCK_CODE_MAP.get((gielda, papier), "")
+def load_stock_tickers(path: Path | None = None) -> dict[tuple[str, str], str]:
+    """Load (Gielda, Papier) -> Ticker mapping from JSON file."""
+    path = path or DEFAULT_STOCK_TICKERS_PATH
+    with open(path, "r", encoding="utf-8") as f:
+        raw: dict[str, dict[str, str]] = json.load(f)
+    return {
+        (gielda, papier): ticker
+        for gielda, papers in raw.items()
+        for papier, ticker in papers.items()
+    }
+
+
+def _parse_price(s: str) -> float:
+    """Parse European decimal format (e.g. '157,40') to float."""
+    return float(s.replace(",", ".")) if s else 0.0
+
+
+def _parse_number(s: str) -> int:
+    """Parse integer string (e.g. '7') to int."""
+    return int(float(s)) if s else 0
+
+
+def _build_output_record(row: dict[str, str], min_commission: float) -> dict:
+    """Build output dict with keys in specified order."""
+    number = _parse_number(row.get("Liczba zrealizowana", ""))
+    price = _parse_price(row.get("Limit ceny", ""))
+    order_value = round(number * price, 2)
+    commission = max(round(order_value * 0.0039, 2), min_commission)
+
+    k_s = row.get("K/S", "")
+    order = "BUY" if k_s == "K" else "SELL"
+
+    return {
+        "Date": row.get("Data zlecenia", ""),
+        "Order": order,
+        "Market": row.get("Gielda", ""),
+        "Ticker": row.get("Ticker", ""),
+        "Asset": row.get("Papier", ""),
+        "Shares": number,
+        "Price": price,
+        "Order value": order_value,
+        "Commission": commission,
+    }
+
+
+def get_stock_ticker(
+    papier: str, gielda: str, stock_tickers: dict[tuple[str, str], str]
+) -> str:
+    """Return 3-letter stock ticker for the given Papier on the given Gielda (exchange)."""
+    key = (gielda, papier)
+    if key not in stock_tickers:
+        raise ValueError(
+            f"Unknown stock: Papier={papier!r} on Gielda={gielda!r}. "
+            f"Add it to stock_tickers.json"
+        )
+    return stock_tickers[key]
 
 
 def main() -> None:
@@ -58,7 +88,24 @@ def main() -> None:
         default=None,
         help="Output JSON path (default: transactions.json)",
     )
+    parser.add_argument(
+        "-c",
+        "--stock-tickers",
+        metavar="FILE",
+        default=None,
+        help="Stock ticker mapping JSON path (default: stock_tickers.json beside script)",
+    )
+    parser.add_argument(
+        "--min-commission",
+        type=float,
+        default=MIN_COMMISSION,
+        help="Minimum commission in PLN (default: 5.0)",
+    )
     args = parser.parse_args()
+
+    stock_tickers = load_stock_tickers(
+        Path(args.stock_tickers) if args.stock_tickers else None
+    )
 
     with open(args.input, "r", encoding="utf-8") as f:
         lines = f.readlines()
@@ -69,10 +116,12 @@ def main() -> None:
     reader = csv.DictReader(io.StringIO("".join(lines[start:])), delimiter=";")
     data = []
     for row in reader:
+        if row.get("Stan") != "Zrealizowane":
+            continue
         papier = row.get("Papier", "")
         gielda = row.get("Gielda", "")
-        row["Code"] = get_stock_code(papier, gielda)
-        data.append(row)
+        row["Ticker"] = get_stock_ticker(papier, gielda, stock_tickers)
+        data.append(_build_output_record(row, args.min_commission))
 
     output_path = args.output or args.input.replace(".csv", ".json").replace(".CSV", ".json")
     with open(output_path, "w", encoding="utf-8") as f:

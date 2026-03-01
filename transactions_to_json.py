@@ -7,6 +7,39 @@ import io
 import json
 import sys
 
+# Official GPW (Warsaw Stock Exchange) 3-letter ticker codes, prescribed by the exchange.
+# (Gielda, Papier) -> Code. Sources: GPW, TradingView, financial data providers.
+STOCK_CODE_MAP: dict[tuple[str, str], str] = {
+    ("WWA-GPW", "ASBIS"): "ASB",
+    ("WWA-GPW", "ASSECOPOL"): "ACP",
+    ("WWA-GPW", "ASSECOSEE"): "ASE",
+    ("WWA-GPW", "BUDIMEX"): "BDX",
+    ("WWA-GPW", "CYBERFLKS"): "CBF",
+    ("WWA-GPW", "DEVELIA"): "DVL",
+    ("WWA-GPW", "DIGITANET"): "DIG",
+    ("WWA-GPW", "EDINVEST"): "EDI",
+    ("WWA-GPW", "FERRO"): "FRO",
+    ("WWA-GPW", "GPW"): "GPW",
+    ("WWA-GPW", "IFIRMA"): "IFI",
+    ("WWA-GPW", "KETY"): "KET",
+    ("WWA-GPW", "KRKA"): "KRK",
+    ("WWA-GPW", "KRUK"): "KRK",
+    ("WWA-GPW", "MOBRUK"): "MBR",
+    ("WWA-GPW", "PCCROKITA"): "PCR",
+    ("WWA-GPW", "PZU"): "PZU",
+    ("WWA-GPW", "SEKO"): "SEK",
+    ("WWA-GPW", "SOPHARMA"): "SPH",
+    ("WWA-GPW", "SYNEKTIK"): "SNT",
+    ("WWA-GPW", "TEXT"): "TXT",
+    ("WWA-GPW", "TSGAMES"): "TSG",
+    ("WWA-GPW", "XTB"): "XTB",
+}
+
+
+def get_stock_code(papier: str, gielda: str) -> str:
+    """Return 3-letter stock code for the given Papier on the given Gielda (exchange)."""
+    return STOCK_CODE_MAP.get((gielda, papier), "")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -34,7 +67,12 @@ def main() -> None:
     while start < len(lines) and not lines[start].strip():
         start += 1
     reader = csv.DictReader(io.StringIO("".join(lines[start:])), delimiter=";")
-    data = list(reader)
+    data = []
+    for row in reader:
+        papier = row.get("Papier", "")
+        gielda = row.get("Gielda", "")
+        row["Code"] = get_stock_code(papier, gielda)
+        data.append(row)
 
     output_path = args.output or args.input.replace(".csv", ".json").replace(".CSV", ".json")
     with open(output_path, "w", encoding="utf-8") as f:
